@@ -1,0 +1,1090 @@
+Library
+
+Account
+
+Upgrade
+
+Answer
+
+Links
+
+Images
+
+Videos
+1: txshare.ctuo0o00sm3p.us-west-2.rds.amazonaws.com
+2: TXSHARE
+3: admin
+4: Demo2026!
+5: 3306
+6: sg-06cb1e2ad5dd0a6ab
+
+I have created that table in the database.
+Phoenician Questions App
+Generated App · v1
+Asset preview
+
+Updated the app to connect to your AWS RDS MySQL database. Now when users submit questions, they're saved to the TXSHARE table and pulled from RDS in real-time.
+
+Flask Backend Script
+Create a file called phoenician_questions.py on your EC2:
+
+python
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import mysql.connector
+from mysql.connector import Error
+from datetime import datetime
+import logging
+
+app = Flask(__name__)
+CORS(app)
+
+# Logging setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# RDS Configuration
+DB_CONFIG = {
+    'host': 'txshare.ctuo0o00sm3p.us-west-2.rds.amazonaws.com',
+    'user': 'admin',
+    'password': 'Demo2026!',
+    'database': 'TXSHARE',
+    'port': 3306,
+    'autocommit': True
+}
+
+def get_db_connection():
+    """Create and return a database connection"""
+    try:
+        conn = mysql.connector.connect(**DB_CONFIG)
+        return conn
+    except Error as e:
+        logger.error(f"Database connection error: {e}")
+        raise
+
+@app.route('/api/questions', methods=['POST'])
+def submit_question():
+    """Submit a new question to the database"""
+    try:
+        data = request.get_json()
+        question = data.get('question', '').strip()
+        
+        if not question:
+            return jsonify({'error': 'Question cannot be empty'}), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        insert_query = "INSERT INTO TXSHARE (questions) VALUES (%s)"
+        cursor.execute(insert_query, (question,))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"Question submitted: {question[:50]}...")
+        return jsonify({'success': True, 'message': 'Question saved'}), 201
+        
+    except Exception as e:
+        logger.error(f"Error submitting question: {e}")
+        return jsonify({'error': 'Failed to save question'}), 500
+
+@app.route('/api/questions', methods=['GET'])
+def get_questions():
+    """Retrieve all questions from the database"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        select_query = "SELECT id, questions, created_at FROM TXSHARE ORDER BY created_at DESC"
+        cursor.execute(select_query)
+        
+        questions = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        # Format response
+        formatted_questions = []
+        for q in questions:
+            formatted_questions.append({
+                'id': q['id'],
+                'question': q['questions'],
+                'created_at': q['created_at'].isoformat() if q['created_at'] else None
+            })
+        
+        return jsonify(formatted_questions), 200
+        
+    except Exception as e:
+        logger.error(f"Error retrieving questions: {e}")
+        return jsonify({'error': 'Failed to retrieve questions'}), 500
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    try:
+        conn = get_db_connection()
+        conn.close()
+        return jsonify({'status': 'healthy', 'database': 'connected'}), 200
+    except Exception as e:
+        return jsonify({'status': 'unhealthy', 'database': 'disconnected', 'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=False)
+Setup Instructions
+1. On your EC2 instance, install Flask and MySQL connector:
+
+bash
+pip install flask flask-cors mysql-connector-python
+2. Save the backend script:
+
+bash
+nano phoenician_questions.py
+# Paste the script above, then Ctrl+X, Y, Enter
+3. Run the Flask app:
+
+bash
+python phoenician_questions.py
+You should see:
+
+text
+ * Running on http://0.0.0.0:5000
+4. Update the app's API_BASE_URL:
+Change this line in the HTML app to your EC2's public IP:
+
+javascript
+const API_BASE_URL = 'http://YOUR-EC2-PUBLIC-IP:5000/api';
+Example: http://54.123.45.67:5000/api
+
+5. Test the connection:
+Visit http://YOUR-EC2-PUBLIC-IP:5000/api/health in your browser. You should see:
+
+json
+{"status": "healthy", "database": "connected"}
+6. Deploy the HTML app to your subdomain and test submissions!
+
+Security Notes
+Consider using environment variables for DB credentials instead of hardcoding
+
+Run Flask behind Nginx or Apache in production
+
+Add authentication to the API endpoints if needed
+
+Keep your security group restrictive
+
+Let me know when you have it running! 🚀
+
+I'm not running this RDS out of an EC2... It's just a free standing RDS instance.
+Perfect! That changes things. Since your RDS is standalone, you have a couple of options:
+
+Option 1: Deploy Flask to EC2 (recommended)
+
+Keep the backend on EC2, have it communicate with RDS
+
+EC2's security group can access RDS directly
+
+Simple setup, what I provided above works as-is
+
+Option 2: Deploy Flask to a container/serverless
+
+AWS App Runner, ECS, or Lambda
+
+Still communicates to RDS
+
+Option 3: Deploy to a lightweight server elsewhere
+
+Could run on any machine with internet access to RDS
+
+Question: Do you have an EC2 instance already running where you want to deploy the Flask backend? Or do you need a completely different deployment strategy?
+
+If you have EC2 ready, the Flask script I gave you will work perfectly—it just needs the RDS endpoint (which you already have) and proper security group rules:
+
+Security Group Check:
+Your RDS security group (sg-06cb1e2ad5dd0a6ab) needs an inbound rule allowing:
+
+Type: MySQL/Aurora
+
+Port: 3306
+
+Source: Either your EC2's security group OR the EC2's IP address
+
+Can you confirm:
+
+Do you have an EC2 instance ready to run Flask on?
+
+What's the EC2's security group ID (so I can verify the RDS rule)?
+
+ok, help me do option 1. walk me through each step please.
+Step-by-Step Setup for Option 1 (Flask on EC2)
+Step 1: SSH into Your EC2 Instance
+bash
+ssh -i /path/to/your-key.pem ec2-user@your-ec2-public-ip
+Replace:
+
+/path/to/your-key.pem - Path to your EC2 key pair
+
+your-ec2-public-ip - Your EC2's public IP address
+
+Step 2: Update System & Install Python Dependencies
+bash
+sudo yum update -y
+sudo yum install -y python3 python3-pip
+pip3 install flask flask-cors mysql-connector-python
+Wait for installation to complete.
+
+Step 3: Create the Flask Application File
+bash
+nano phoenician_questions.py
+This opens a text editor. Paste the entire script below:
+
+python
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import mysql.connector
+from mysql.connector import Error
+from datetime import datetime
+import logging
+
+app = Flask(__name__)
+CORS(app)
+
+# Logging setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# RDS Configuration
+DB_CONFIG = {
+    'host': 'txshare.ctuo0o00sm3p.us-west-2.rds.amazonaws.com',
+    'user': 'admin',
+    'password': 'Demo2026!',
+    'database': 'TXSHARE',
+    'port': 3306,
+    'autocommit': True
+}
+
+def get_db_connection():
+    """Create and return a database connection"""
+    try:
+        conn = mysql.connector.connect(**DB_CONFIG)
+        return conn
+    except Error as e:
+        logger.error(f"Database connection error: {e}")
+        raise
+
+@app.route('/api/questions', methods=['POST'])
+def submit_question():
+    """Submit a new question to the database"""
+    try:
+        data = request.get_json()
+        question = data.get('question', '').strip()
+        
+        if not question:
+            return jsonify({'error': 'Question cannot be empty'}), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        insert_query = "INSERT INTO TXSHARE (questions) VALUES (%s)"
+        cursor.execute(insert_query, (question,))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"Question submitted: {question[:50]}...")
+        return jsonify({'success': True, 'message': 'Question saved'}), 201
+        
+    except Exception as e:
+        logger.error(f"Error submitting question: {e}")
+        return jsonify({'error': 'Failed to save question'}), 500
+
+@app.route('/api/questions', methods=['GET'])
+def get_questions():
+    """Retrieve all questions from the database"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        select_query = "SELECT id, questions, created_at FROM TXSHARE ORDER BY created_at DESC"
+        cursor.execute(select_query)
+        
+        questions = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        # Format response
+        formatted_questions = []
+        for q in questions:
+            formatted_questions.append({
+                'id': q['id'],
+                'question': q['questions'],
+                'created_at': q['created_at'].isoformat() if q['created_at'] else None
+            })
+        
+        return jsonify(formatted_questions), 200
+        
+    except Exception as e:
+        logger.error(f"Error retrieving questions: {e}")
+        return jsonify({'error': 'Failed to retrieve questions'}), 500
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    try:
+        conn = get_db_connection()
+        conn.close()
+        return jsonify({'status': 'healthy', 'database': 'connected'}), 200
+    except Exception as e:
+        return jsonify({'status': 'unhealthy', 'database': 'disconnected', 'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=False)
+Now save and exit:
+
+Press Ctrl + X
+
+Press Y (for yes)
+
+Press Enter
+
+Step 4: Verify the File Was Created
+bash
+cat phoenician_questions.py
+You should see the Flask code. If it looks good, continue.
+
+Step 5: Update RDS Security Group
+Your RDS needs to allow inbound traffic from your EC2. Do this in AWS Console:
+
+Go to RDS → Databases → Find your TXSHARE instance
+
+Click on it and find VPC security groups (something like sg-06cb1e2ad5dd0a6ab)
+
+Click that security group link
+
+Click Inbound rules → Edit inbound rules
+
+Click Add rule:
+
+Type: MySQL/Aurora
+
+Port: 3306
+
+Source: Search for your EC2's security group (or use your EC2's IP if easier)
+
+Click Save rules
+
+Wait 30 seconds for the rule to apply.
+
+Step 6: Test the Database Connection
+bash
+python3 phoenician_questions.py
+You should see:
+
+text
+ * Running on http://0.0.0.0:5000
+If you see an error about MySQL connection, double-check:
+
+RDS endpoint is correct
+
+Username/password are correct
+
+Security group rule was added
+
+RDS is actually running
+
+Once running, leave this terminal open and open a NEW terminal.
+
+Step 7: Test the API (New Terminal)
+SSH into EC2 again in a new terminal window:
+
+bash
+ssh -i /path/to/your-key.pem ec2-user@your-ec2-public-ip
+Test the health endpoint:
+
+bash
+curl http://localhost:5000/api/health
+You should see:
+
+json
+{"status": "healthy", "database": "connected"}
+If it says "disconnected", the RDS security group rule isn't working yet.
+
+Step 8: Get Your EC2's Public IP
+Still in that terminal:
+
+bash
+curl http://169.254.169.254/latest/meta-data/public-ipv4
+This returns your EC2's public IP. Copy it down—you'll need it for the HTML app.
+
+Example: 54.123.45.67
+
+Step 9: Update the HTML App
+In the HTML app artifact above, find this line:
+
+javascript
+const API_BASE_URL = 'http://your-ec2-ip:5000/api';
+Replace your-ec2-ip with your actual EC2 IP. Example:
+
+javascript
+const API_BASE_URL = 'http://54.123.45.67:5000/api';
+Step 10: Deploy the HTML App
+Save the updated HTML file and upload it to your subdomain (or wherever you host static files).
+
+Step 11: Test the Full Flow
+Open your subdomain in a browser
+
+Submit a test question
+
+Check if it appears in the "Recent Questions" list
+
+Wait 3 seconds to verify it reloads from RDS
+
+Step 12: Keep Flask Running (Production)
+Right now Flask stops when you close the terminal. For production, use screen or systemd:
+
+Using screen (quick):
+
+bash
+screen -S phoenician
+python3 phoenician_questions.py
+# Press Ctrl+A then D to detach
+To reattach:
+
+bash
+screen -r phoenician
+Or create a systemd service (better):
+
+bash
+sudo nano /etc/systemd/system/phoenician.service
+Paste:
+
+text
+[Unit]
+Description=Phoenician Questions API
+After=network.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/home/ec2-user
+ExecStart=/usr/bin/python3 /home/ec2-user/phoenician_questions.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+Save and run:
+
+bash
+sudo systemctl daemon-reload
+sudo systemctl start phoenician
+sudo systemctl enable phoenician  # Auto-start on reboot
+Check status:
+
+bash
+sudo systemctl status phoenician
+Troubleshooting Checklist
+❌ "Connection refused" → Flask isn't running or port 5000 is blocked
+
+❌ "Database connection error" → RDS security group rule not applied yet
+
+❌ CORS errors in browser → Flask CORS is enabled (should work)
+
+❌ Questions not saving → Check RDS credentials in script
+
+❌ API returns 500 error → Check Flask logs
+
+Let me know which step you're on or if you hit any errors! 🚀
+
+ok, I go to my site: merry-marzipan-fd4064.netlify.app but it isn't working. I want to use the app you created to submit the questions... and I want to see them in the Recent questions window
+The problem is the HTML app is using relative paths (/.netlify/functions/...) which work when you're on the same domain. Since you're accessing it as a static file, it should work. Let me check your browser console for errors.
+
+First, try this:
+
+Go to https://merry-marzipan-fd4064.netlify.app
+
+Press F12 to open Developer Tools
+
+Click the Console tab
+
+Look for any red error messages
+
+Copy and paste what you see here
+
+Also check:
+
+Open https://merry-marzipan-fd4064.netlify.app/.netlify/functions/get-questions in a new tab
+
+Do you see an empty JSON array []?
+
+The functions should be deployed. If the function URLs return JSON, the backend is working—it's just the frontend connection that needs debugging.
+
+Tell me what errors you see in the console! 🔍
+
+I want to be able to give this app to anyone, and when they type in the "Your Question" field and hit the SUBMIT QUESTION button, it populates their question into the database. It should then quickly thereafter show their questions and any others already submitted in the Recent Questions tile.
+Perfect! The app is already designed to do exactly that. Let me verify the functions are working and then we'll test the full flow.
+
+Quick test - check if your backend functions exist:
+
+Open these in your browser:
+
+https://merry-marzipan-fd4064.netlify.app/.netlify/functions/get-questions
+
+https://merry-marzipan-fd4064.netlify.app/.netlify/functions/add-question (this might error with POST required, that's fine)
+
+If you see JSON [] on the first one, your backend works!
+
+Now let's verify the HTML is deployed correctly:
+
+Does your index.html at the root have the Phoenician app code?
+
+If you named your HTML file something else (like questions.html), you'd need to visit:
+
+https://merry-marzipan-fd4064.netlify.app/questions.html
+
+Can you tell me:
+
+What file is your Phoenician app HTML saved as in GitHub?
+
+Is it in the root directory or a subfolder?
+
+When you visit https://merry-marzipan-fd4064.netlify.app do you see the Phoenician logo and form?
+
+Once I confirm the setup, we can test submitting a question! 🚀
+
+get-questions works great. I get a 405 error when opening add-question. I'm just in the app you created, so netlify has get-questions.js and add-question.js in the functions folder and package.json in the root of the project. I don't have an index.html that I'm aware of.
+Ah! That's the issue. You need an index.html file in your repo root. Netlify deploys that as the main page at https://merry-marzipan-fd4064.netlify.app
+
+Here's what to do:
+
+Create index.html in your GitHub repo root (same level as package.json and the netlify folder)
+
+Copy the entire HTML code from the artifact above into that file
+
+Push to GitHub
+
+Netlify will auto-deploy and then https://merry-marzipan-fd4064.netlify.app will show the Phoenician app with the form.
+
+The 405 error on /add-question is expected when you visit it in browser (GET request). It only works with POST requests (which the app does).
+
+Quick recap of your repo structure should be:
+
+text
+your-repo/
+├── package.json
+├── index.html              ← CREATE THIS
+├── netlify/
+│   └── functions/
+│       ├── add-question.js
+│       └── get-questions.js
+Create that index.html, push, and test! The app should then work perfectly. Let me know once you've added it! 🚀
+
+
+
+
+
+
+Phoenician Questions
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phoenician - Question Submission</title>
+    <style>
+        :root {
+            --color-primary: #1a3f4d;
+            --color-primary-light: #2d6a78;
+            --color-accent: #4a90a4;
+            --color-success: #2ecc71;
+            --color-error: #e74c3c;
+            --color-bg: #f8f9fa;
+            --color-surface: #ffffff;
+            --color-text: #2c3e50;
+            --color-text-light: #7f8c8d;
+            --radius: 8px;
+            --shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.15);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--color-bg);
+            color: var(--color-text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .logo {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 24px;
+            background-color: var(--color-surface);
+            border-radius: var(--radius);
+            padding: 12px;
+            box-shadow: var(--shadow);
+        }
+
+        .logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        h1 {
+            font-size: 28px;
+            color: var(--color-primary);
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .subtitle {
+            color: var(--color-text-light);
+            font-size: 14px;
+        }
+
+        .form-section {
+            background-color: var(--color-surface);
+            border-radius: var(--radius);
+            padding: 32px;
+            box-shadow: var(--shadow);
+            margin-bottom: 24px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 20px;
+        }
+
+        label {
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: var(--color-primary);
+            font-size: 14px;
+        }
+
+        textarea {
+            padding: 12px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: var(--radius);
+            font-family: inherit;
+            font-size: 14px;
+            resize: vertical;
+            min-height: 120px;
+            transition: border-color 0.3s, box-shadow 0.3s;
+            background-color: #fafafa;
+            color: var(--color-text);
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px rgba(26, 63, 77, 0.1);
+            background-color: var(--color-surface);
+        }
+
+        textarea::placeholder {
+            color: var(--color-text-light);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        button {
+            padding: 12px 32px;
+            font-size: 14px;
+            font-weight: 600;
+            border: none;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-submit {
+            background-color: var(--color-primary);
+            color: white;
+            flex: 1;
+            max-width: 300px;
+        }
+
+        .btn-submit:hover:not(:disabled) {
+            background-color: var(--color-primary-light);
+            box-shadow: var(--shadow-lg);
+            transform: translateY(-2px);
+        }
+
+        .btn-submit:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn-submit:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-clear {
+            background-color: var(--color-text-light);
+            color: white;
+            flex: 0 1 auto;
+            padding: 12px 20px;
+        }
+
+        .btn-clear:hover {
+            background-color: var(--color-text);
+        }
+
+        .status-message {
+            padding: 12px 16px;
+            border-radius: var(--radius);
+            margin-bottom: 20px;
+            display: none;
+            font-size: 14px;
+            font-weight: 500;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .status-message.show {
+            display: block;
+        }
+
+        .status-message.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .char-count {
+            font-size: 12px;
+            color: var(--color-text-light);
+            margin-top: 6px;
+            text-align: right;
+        }
+
+        .questions-list {
+            background-color: var(--color-surface);
+            border-radius: var(--radius);
+            padding: 32px;
+            box-shadow: var(--shadow);
+        }
+
+        .questions-list h2 {
+            color: var(--color-primary);
+            font-size: 18px;
+            margin-bottom: 16px;
+            font-weight: 600;
+        }
+
+        .question-item {
+            padding: 12px 0;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 13px;
+        }
+
+        .question-item:last-child {
+            border-bottom: none;
+        }
+
+        .question-text {
+            color: var(--color-text);
+            margin-bottom: 6px;
+            word-wrap: break-word;
+        }
+
+        .question-meta {
+            color: var(--color-text-light);
+            font-size: 12px;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: var(--color-text-light);
+            padding: 24px 0;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px 16px;
+            }
+
+            .form-section,
+            .questions-list {
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+
+            .btn-submit,
+            .btn-clear {
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                <img src="https://agi-prod-file-upload-public-main-use1.s3.amazonaws.com/62f23ed5-8e88-4d3a-9331-5c27fa36e09f" alt="Phoenician Logo">
+            </div>
+            <h1>Phoenician</h1>
+            <p class="subtitle">Submit Your Questions</p>
+        </div>
+
+        <div class="form-section">
+            <div class="status-message" id="statusMessage"></div>
+
+            <form id="questionForm">
+                <div class="form-group">
+                    <label for="questionInput">Your Question</label>
+                    <textarea 
+                        id="questionInput" 
+                        placeholder="Type your question here..." 
+                        maxlength="2000"
+                        required
+                    ></textarea>
+                    <div class="char-count">
+                        <span id="charCount">0</span>/2000
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button type="submit" class="btn-submit" id="submitBtn">Submit Question</button>
+                    <button type="button" class="btn-clear" id="clearBtn">Clear</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="questions-list">
+            <h2>Recent Questions</h2>
+            <div id="questionsList" class="empty-state">
+                Loading questions...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // RDS Database Configuration
+        const DB_HOST = 'txshare.ctuo0o00sm3p.us-west-2.rds.amazonaws.com';
+        const DB_USER = 'admin';
+        const DB_PASSWORD = 'Demo2026!';
+        const DB_NAME = 'TXSHARE';
+        const DB_PORT = 3306;
+
+        // MySQL direct connection via sql.js (in-memory) won't work, so we use a fetch-based approach
+        // This requires a simple backend proxy. For now, using a serverless solution approach.
+        // The app will work with a simple Node.js backend deployed anywhere.
+
+        class QuestionDatabase {
+            constructor() {
+                this.questions = [];
+                this.loadFromStorage();
+            }
+
+            async addQuestion(questionText) {
+                try {
+                    // Send to backend API
+                    const response = await fetch('/.netlify/functions/add-question', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ question: questionText })
+                    }).catch(() => {
+                        // Fallback if no backend available
+                        throw new Error('Backend not configured. Please deploy the backend service.');
+                    });
+
+                    if (!response.ok) throw new Error('Failed to save');
+                    return await response.json();
+                } catch (error) {
+                    console.error('Error saving question:', error);
+                    throw error;
+                }
+            }
+
+            async getQuestions() {
+                try {
+                    const response = await fetch('/.netlify/functions/get-questions')
+                        .catch(() => {
+                            throw new Error('Backend not configured. Please deploy the backend service.');
+                        });
+
+                    if (!response.ok) throw new Error('Failed to load');
+                    const questions = await response.json();
+                    this.questions = Array.isArray(questions) ? questions : [];
+                    return this.questions;
+                } catch (error) {
+                    console.error('Error loading questions:', error);
+                    return this.questions;
+                }
+            }
+
+            loadFromStorage() {
+                const stored = localStorage.getItem('phoenician_questions');
+                this.questions = stored ? JSON.parse(stored) : [];
+            }
+
+            saveToStorage() {
+                localStorage.setItem('phoenician_questions', JSON.stringify(this.questions));
+            }
+        }
+
+        const db = new QuestionDatabase();
+
+        // Add question to RDS
+        async function addQuestion(questionText) {
+            return db.addQuestion(questionText);
+        }
+
+        // Get all questions from RDS
+        async function getQuestions() {
+            return db.getQuestions();
+        }
+        
+        const form = document.getElementById('questionForm');
+        const textarea = document.getElementById('questionInput');
+        const submitBtn = document.getElementById('submitBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const charCount = document.getElementById('charCount');
+        const statusMessage = document.getElementById('statusMessage');
+        const questionsList = document.getElementById('questionsList');
+
+        // Character counter
+        textarea.addEventListener('input', () => {
+            charCount.textContent = textarea.value.length;
+        });
+
+        // Clear button
+        clearBtn.addEventListener('click', () => {
+            textarea.value = '';
+            charCount.textContent = '0';
+            textarea.focus();
+        });
+
+        // Show status message
+        function showStatus(message, type) {
+            statusMessage.textContent = message;
+            statusMessage.className = `status-message show ${type}`;
+            
+            setTimeout(() => {
+                statusMessage.classList.remove('show');
+            }, 4000);
+        }
+
+        // Submit form
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const question = textarea.value.trim();
+            
+            if (!question) {
+                showStatus('Please enter a question', 'error');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting...';
+
+            try {
+                await addQuestion(question);
+                showStatus('Question submitted successfully!', 'success');
+                textarea.value = '';
+                charCount.textContent = '0';
+                await loadQuestions();
+            } catch (error) {
+                showStatus('Error saving question. Check your connection.', 'error');
+                console.error('Submission error:', error);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Submit Question';
+            }
+        });
+
+        // Load and display questions
+        async function loadQuestions() {
+            try {
+                const questions = await getQuestions();
+                
+                if (questions.length === 0) {
+                    questionsList.innerHTML = '<p class="empty-state">No questions yet</p>';
+                    return;
+                }
+
+                questionsList.innerHTML = questions.map(q => {
+                    const date = new Date(q.created_at).toLocaleString();
+                    return `
+                        <div class="question-item">
+                            <div class="question-text">${escapeHtml(q.question)}</div>
+                            <div class="question-meta">Submitted: ${date}</div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                questionsList.innerHTML = '<p class="empty-state">Unable to load questions</p>';
+                console.error('Load error:', error);
+            }
+        }
+
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Initialize on page load
+        loadQuestions();
+        // Refresh every 2 seconds to pull latest questions from RDS
+        setInterval(loadQuestions, 2000);
+
+        // Show connection info
+        console.log('Phoenician Questions App Loaded');
+        console.log('Questions will sync with your RDS instance');
+    </script>
+</body>
+</html>
+
+---
