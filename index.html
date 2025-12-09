@@ -227,6 +227,9 @@
         }
 
         .question-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
             padding: 12px 0;
             border-bottom: 1px solid #e0e0e0;
             font-size: 13px;
@@ -234,6 +237,19 @@
 
         .question-item:last-child {
             border-bottom: none;
+        }
+
+        .question-checkbox {
+            margin-top: 4px;
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+            accent-color: var(--color-primary);
+            flex-shrink: 0;
+        }
+
+        .question-content {
+            flex: 1;
         }
 
         .question-text {
@@ -245,6 +261,11 @@
         .question-meta {
             color: var(--color-text-light);
             font-size: 12px;
+        }
+
+        .question-item.deleting {
+            opacity: 0.5;
+            transition: opacity 0.3s;
         }
 
         .empty-state {
@@ -321,33 +342,17 @@
     </div>
 
     <script>
-        // RDS Database Configuration
-        const DB_HOST = 'txshare.ctuo0o00sm3p.us-west-2.rds.amazonaws.com';
-        const DB_USER = 'admin';
-        const DB_PASSWORD = 'Demo2026!';
-        const DB_NAME = 'TXSHARE';
-        const DB_PORT = 3306;
-
-        // MySQL direct connection via sql.js (in-memory) won't work, so we use a fetch-based approach
-        // This requires a simple backend proxy. For now, using a serverless solution approach.
-        // The app will work with a simple Node.js backend deployed anywhere.
-
         class QuestionDatabase {
             constructor() {
                 this.questions = [];
-                this.loadFromStorage();
             }
 
             async addQuestion(questionText) {
                 try {
-                    // Send to backend API
                     const response = await fetch('/.netlify/functions/add-question', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ question: questionText })
-                    }).catch(() => {
-                        // Fallback if no backend available
-                        throw new Error('Backend not configured. Please deploy the backend service.');
                     });
 
                     if (!response.ok) throw new Error('Failed to save');
@@ -360,11 +365,7 @@
 
             async getQuestions() {
                 try {
-                    const response = await fetch('/.netlify/functions/get-questions')
-                        .catch(() => {
-                            throw new Error('Backend not configured. Please deploy the backend service.');
-                        });
-
+                    const response = await fetch('/.netlify/functions/get-questions');
                     if (!response.ok) throw new Error('Failed to load');
                     const questions = await response.json();
                     this.questions = Array.isArray(questions) ? questions : [];
@@ -375,28 +376,25 @@
                 }
             }
 
-            loadFromStorage() {
-                const stored = localStorage.getItem('phoenician_questions');
-                this.questions = stored ? JSON.parse(stored) : [];
-            }
+            async deleteQuestion(id) {
+                try {
+                    const response = await fetch('/.netlify/functions/delete-question', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id })
+                    });
 
-            saveToStorage() {
-                localStorage.setItem('phoenician_questions', JSON.stringify(this.questions));
+                    if (!response.ok) throw new Error('Failed to delete');
+                    return await response.json();
+                } catch (error) {
+                    console.error('Error deleting question:', error);
+                    throw error;
+                }
             }
         }
 
         const db = new QuestionDatabase();
 
-        // Add question to RDS
-        async function addQuestion(questionText) {
-            return db.addQuestion(questionText);
-        }
-
-        // Get all questions from RDS
-        async function getQuestions() {
-            return db.getQuestions();
-        }
-        
         const form = document.getElementById('questionForm');
         const textarea = document.getElementById('questionInput');
         const submitBtn = document.getElementById('submitBtn');
@@ -421,7 +419,6 @@
         function showStatus(message, type) {
             statusMessage.textContent = message;
             statusMessage.className = `status-message show ${type}`;
-            
             setTimeout(() => {
                 statusMessage.classList.remove('show');
             }, 4000);
@@ -442,14 +439,13 @@
             submitBtn.textContent = 'Submitting...';
 
             try {
-                await addQuestion(question);
+                await db.addQuestion(question);
                 showStatus('Question submitted successfully!', 'success');
                 textarea.value = '';
                 charCount.textContent = '0';
                 await loadQuestions();
             } catch (error) {
                 showStatus('Error saving question. Check your connection.', 'error');
-                console.error('Submission error:', error);
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Submit Question';
@@ -459,25 +455,43 @@
         // Load and display questions
         async function loadQuestions() {
             try {
-                const questions = await getQuestions();
+                const questions = await db.getQuestions();
                 
                 if (questions.length === 0) {
                     questionsList.innerHTML = '<p class="empty-state">No questions yet</p>';
                     return;
                 }
 
-                questionsList.innerHTML = questions.map(q => {
-                    const date = new Date(q.created_at).toLocaleString();
-                    return `
-                        <div class="question-item">
+                questionsList.innerHTML = questions.map(q => `
+                    <div class="question-item" data-id="${q.id}">
+                        <input type="checkbox" class="question-checkbox" data-id="${q.id}">
+                        <div class="question-content">
                             <div class="question-text">${escapeHtml(q.question)}</div>
-                            <div class="question-meta">Submitted: ${date}</div>
+                            <div class="question-meta">Submitted: ${new Date(q.created_at).toLocaleString()}</div>
                         </div>
-                    `;
-                }).join('');
+                    </div>
+                `).join('');
+
+                // Add event listeners to checkboxes
+                document.querySelectorAll('.question-checkbox').forEach(checkbox => {
+                    checkbox.addEventListener('change', async (e) => {
+                        if (e.target.checked) {
+                            const id = parseInt(e.target.getAttribute('data-id'));
+                            const item = document.querySelector(`[data-id="${id}"]`);
+                            item.classList.add('deleting');
+                            
+                            try {
+                                await db.deleteQuestion(id);
+                                await loadQuestions();
+                            } catch (error) {
+                                item.classList.remove('deleting');
+                                showStatus('Error deleting question', 'error');
+                            }
+                        }
+                    });
+                });
             } catch (error) {
                 questionsList.innerHTML = '<p class="empty-state">Unable to load questions</p>';
-                console.error('Load error:', error);
             }
         }
 
@@ -490,12 +504,9 @@
 
         // Initialize on page load
         loadQuestions();
-        // Refresh every 2 seconds to pull latest questions from RDS
         setInterval(loadQuestions, 2000);
 
-        // Show connection info
         console.log('Phoenician Questions App Loaded');
-        console.log('Questions will sync with your RDS instance');
     </script>
 </body>
 </html>
